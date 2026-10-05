@@ -1,0 +1,12 @@
+/bin/
+/data/
+*.db
+*.db-wal
+*.db-shm
+web/node_modules/
+web/dist/
+.DS_Store
+.env
+*.log
+/tmp/
+IMPLEMENTATION.md
