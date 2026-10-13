@@ -1,0 +1,21 @@
+commands:
+  - id: uname
+    argv: ["uname", "-a"]
+    timeout_seconds: 5
+    description: Kernel and hostname
+  - id: uptime
+    argv: ["uptime"]
+    timeout_seconds: 5
+    description: Load and uptime
+  - id: disk
+    argv: ["df", "-h"]
+    timeout_seconds: 10
+    description: Filesystem usage
+  - id: memory
+    argv: ["free", "-h"]
+    timeout_seconds: 5
+    description: Memory usage
+  - id: whoami
+    argv: ["whoami"]
+    timeout_seconds: 5
+    description: Agent process user
