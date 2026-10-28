@@ -1,0 +1,97 @@
+# One command demo:  docker compose up --build   (from the repo root or this folder)
+# Then open http://localhost:8080 and click "Sign in to the demo".
+name: fleetmgr
+
+services:
+  fleetmgr:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      FLEET_ADMIN_TOKEN: ${FLEET_ADMIN_TOKEN:-dev-admin-token}
+      FLEET_PUBLIC_URL: http://localhost:8080
+      FLEET_DB_PATH: /data/fleet.db
+      # Lets the console show which Prometheus scrape targets are up. Unset = hidden.
+      FLEET_PROMETHEUS_URL: http://prometheus:9090
+      # Demo mode: the console can start, unplug and remove pretend Linux machines
+      # (Docker containers). Set FLEET_DEMO_MODE=0 to turn it off.
+      FLEET_DEMO_MODE: ${FLEET_DEMO_MODE:-1}
+      FLEET_DEMO_NODES: ${FLEET_DEMO_NODES:-3}
+      FLEET_DEMO_NETWORK: fleetmgr-aisle
+      FLEET_DEMO_NODE_IMAGE: fleetmgr-node:latest
+      # Shorter than the 90s default so an unplugged machine turns offline quickly on stage.
+      FLEET_OFFLINE_AFTER: ${FLEET_OFFLINE_AFTER:-45s}
+    ports:
+      - "8080:8080"
+    volumes:
+      - fleet-data:/data
+      # Only needed for demo mode: lets the manager start and stop the demo containers.
+      # This is root-equivalent access to Docker, so never mount it in production.
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      node-image:
+        condition: service_completed_successfully
+    networks:
+      - aisle
+
+  # Builds the image the demo machines run from (agent + uname/uptime/df/free), then exits.
+  node-image:
+    build:
+      context: ..
+      dockerfile: deploy/node.Dockerfile
+    image: fleetmgr-node:latest
+    entrypoint: ["/bin/true"]
+    restart: "no"
+    network_mode: none
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - fleetmgr
+    networks:
+      - aisle
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # The console embeds single panels (/d-solo/...) in an iframe.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_USERS_DEFAULT_THEME: light
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/fleet-overview.json
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - aisle
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    pid: host
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - aisle
+
+networks:
+  aisle:
+    name: fleetmgr-aisle
+
+volumes:
+  fleet-data:

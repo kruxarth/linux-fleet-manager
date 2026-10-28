@@ -1,0 +1,4 @@
+# Lets `docker compose up --build` work from the repo root.
+name: fleetmgr
+include:
+  - deploy/docker-compose.yml
