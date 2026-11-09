@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Fleet Manager, explained from zero</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --sky:#E4ECF8; --ink:#1F2A44; --soft:#5C6B8A; --paper:#FFFFFF;
+  --sun:#FFC94D; --leaf:#1F9D63; --rose:#E0484E; --ember:#F07A1A;
+  --plum:#7559F2; --steel:#3F68B5; --mist:#C9D6EC;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--sky);color:var(--ink);
+  font:500 18px/1.45 Nunito,ui-rounded,system-ui,sans-serif}
+.app{height:100%;display:grid;grid-template-rows:auto 1fr auto auto}
+header{display:flex;align-items:baseline;gap:14px;padding:14px 28px 0}
+header .chap{font:600 15px Fredoka,ui-rounded,sans-serif;color:var(--soft)}
+header .title{font:600 22px Fredoka,ui-rounded,sans-serif}
+#stage{position:relative;min-height:0;display:flex;align-items:center;justify-content:center;padding:4px 20px}
+#stage svg{width:100%;height:100%;max-height:100%}
+#stage .html{max-width:980px;width:100%}
+.sub{margin:0 auto 10px;max-width:1000px;width:calc(100% - 40px);background:var(--paper);
+  border:3px solid var(--ink);border-radius:18px;padding:16px 24px;min-height:94px;
+  display:flex;align-items:center;justify-content:center;text-align:center;
+  font:700 clamp(18px,2.1vw,25px)/1.35 Nunito,ui-rounded,sans-serif;box-shadow:0 5px 0 var(--ink)}
+.sub code{font:800 .9em ui-monospace,Menlo,monospace;background:var(--sky);padding:1px 7px;border-radius:6px}
+.ctrl{display:flex;align-items:center;gap:10px;padding:4px 20px 14px;max-width:1040px;width:100%;margin:0 auto}
+button{font:700 15px Nunito,sans-serif;color:var(--ink);background:var(--paper);border:2px solid var(--ink);
+  border-radius:12px;padding:7px 14px;cursor:pointer}
+button:hover{background:#F3F7FD}
+button:focus-visible{outline:3px solid var(--plum);outline-offset:2px}
+button[aria-pressed=true]{background:var(--ink);color:var(--paper)}
+.bar{flex:1;display:flex;gap:4px;height:14px;cursor:pointer}
+.bar i{flex:1;background:var(--mist);border-radius:7px;position:relative;overflow:hidden}
+.bar i b{position:absolute;inset:0;width:0;background:var(--ink);border-radius:7px}
+.bar i:hover{background:#B5C5E2}
+.count{font:700 14px Nunito;color:var(--soft);min-width:52px;text-align:right}
+
+/* svg vocabulary */
+svg text{font-family:Nunito,ui-rounded,sans-serif;fill:var(--ink)}
+.h1{font:600 46px Fredoka,ui-rounded,sans-serif}
+.h2{font:600 30px Fredoka,ui-rounded,sans-serif}
+.lbl{font-weight:800;font-size:17px}
+.sm{font-weight:700;font-size:14px;fill:var(--soft)}
+.mono{font-family:ui-monospace,Menlo,monospace;font-weight:700}
+.line{stroke:var(--ink);stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.dash{stroke-dasharray:8 8}
+.card{fill:var(--paper);stroke:var(--ink);stroke-width:3}
+
+/* beat reveal */
+[data-b]{opacity:0;transition:opacity .5s, transform .5s}
+[data-b].show{opacity:1}
+[data-hide].gone{opacity:0;transition:opacity .5s}
+
+/* node faces */
+.f-sick,.f-sleep{display:none}
+[data-mood=sick] .f-happy,[data-mood=sleep] .f-happy{display:none}
+[data-mood=sick] .f-sick{display:inline}
+[data-mood=sleep] .f-sleep{display:inline}
+[data-mood=sleep] .body{fill:#E7D9AE}
+.pill{fill:var(--mist);transition:fill .4s}
+[data-state=online] .pill{fill:var(--leaf)}
+[data-state=offline] .pill{fill:var(--rose)}
+[data-state=pending] .pill{fill:var(--sun)}
+[data-state=online] .pilltxt,[data-state=offline] .pilltxt{fill:#fff}
+.pilltxt{font-weight:800;font-size:13px}
+[data-state=""] .pillg{display:none}
+
+/* motion */
+@keyframes bob{50%{transform:translateY(-6px)}}
+.bob{animation:bob 2.4s ease-in-out infinite;transform-box:fill-box}
+@keyframes wave{0%,100%{transform:rotate(0)}50%{transform:rotate(-28deg)}}
+.wave{animation:wave .9s ease-in-out infinite;transform-origin:0 0}
+@keyframes fly{0%{transform:translate(0,0);opacity:0}12%{opacity:1}85%{opacity:1}100%{transform:translate(var(--dx),var(--dy));opacity:0}}
+.fly{animation:fly var(--t,2.2s) ease-in-out infinite;animation-delay:var(--d,0s)}
+.fly.stopped{animation:none!important;opacity:0!important}
+@keyframes once{0%{transform:translate(0,0)}100%{transform:translate(var(--dx),var(--dy))}}
+.move.show{animation:once 1.4s ease-in-out forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.drawme{stroke-dasharray:1200;stroke-dashoffset:1200;animation:draw 3s ease-out forwards}
+@keyframes pop{0%{transform:scale(.3)}70%{transform:scale(1.12)}100%{transform:scale(1)}}
+.pop.show{animation:pop .5s ease-out both;transform-box:fill-box;transform-origin:center}
+@keyframes zz{0%{opacity:0;transform:translate(0,0)}30%{opacity:1}100%{opacity:0;transform:translate(14px,-26px)}}
+.zz{animation:zz 2.2s ease-out infinite}
+@keyframes ping{0%{opacity:.9;r:8}100%{opacity:0;r:40}}
+.ping{animation:ping 1.6s ease-out infinite}
+
+/* html scenes */
+.steps{display:grid;gap:14px}
+.step{display:grid;grid-template-columns:54px 1fr;gap:16px;align-items:start;background:var(--paper);
+  border:3px solid var(--ink);border-radius:18px;padding:16px 20px}
+.step .n{font:600 30px Fredoka,sans-serif;width:48px;height:48px;border-radius:50%;background:var(--sun);
+  border:3px solid var(--ink);display:grid;place-items:center}
+.step h3{margin:0 0 2px;font:600 22px Fredoka,sans-serif}
+.step p{margin:0;color:var(--soft);font-weight:700}
+.step a{color:var(--steel);font-weight:800}
+.gloss{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px 26px}
+.gloss div{padding:9px 0;border-bottom:2px dashed var(--mist)}
+.gloss b{font:600 19px Fredoka,sans-serif;display:block}
+.gloss span{color:var(--soft);font-weight:700;font-size:16px}
+.html h2{font:600 32px Fredoka,sans-serif;margin:0 0 16px}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  .drawme{stroke-dashoffset:0}
+}
+@media (max-width:640px){header{padding:10px 16px 0}.sub{padding:12px 14px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header><span class="chap" id="chap"></span><span class="title" id="title"></span></header>
+  <main id="stage" aria-live="off"></main>
+  <div class="sub" id="sub" aria-live="polite"></div>
+  <div class="ctrl">
+    <button id="play">Pause</button>
+    <button id="prev" aria-label="Previous">◀</button>
+    <button id="next" aria-label="Next">▶</button>
+    <button id="voice" aria-pressed="false" title="Read the subtitles out loud (V)">Read aloud</button>
+    <div class="bar" id="bar"></div>
+    <span class="count" id="count"></span>
+  </div>
+</div>
+
+<script>
+/* ---------- drawing helpers ---------- */
+const $ = s => document.querySelector(s);
+const B = b => b ? ` data-b="${b}"` : '';
+
+function node(x, y, o = {}) {
+  const s = o.s || 1, id = o.id ? ` id="${o.id}"` : '';
+  const agent = o.agent ? `<g${B(o.agent === true ? 0 : o.agent)} transform="translate(34,-40)">
+      <line x1="0" y1="-12" x2="0" y2="-24" class="line"/><circle cx="0" cy="-27" r="4" fill="var(--leaf)" stroke="var(--ink)" stroke-width="2.5"/>
+      <circle r="13" fill="var(--leaf)" stroke="var(--ink)" stroke-width="3"/>
+      <circle cx="-4" cy="-2" r="2.2" fill="#fff"/><circle cx="4" cy="-2" r="2.2" fill="#fff"/>
+      <path d="M-4 5 Q0 8 4 5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></g>` : '';
+  const pill = o.state !== undefined ? `<g class="pillg" transform="translate(0,-66)"><rect class="pill" x="-42" y="-13" width="84" height="26" rx="13" stroke="var(--ink)" stroke-width="2.5"/>
+      <text class="pilltxt" text-anchor="middle" y="5">${o.state}</text></g>` : '';
+  return `<g${id} transform="translate(${x},${y}) scale(${s})" data-mood="${o.mood || 'happy'}" data-state="${o.state || ''}"${B(o.b)}>
+    <g class="${o.bob === false ? '' : 'bob'}" style="animation-delay:${(o.delay || 0)}s">
+    <rect x="-28" y="34" width="14" height="10" rx="3" fill="var(--ink)"/><rect x="14" y="34" width="14" height="10" rx="3" fill="var(--ink)"/>
+    <rect class="body" x="-46" y="-36" width="92" height="74" rx="16" fill="${o.color || 'var(--sun)'}" stroke="var(--ink)" stroke-width="3.5"/>
+    <rect x="-34" y="20" width="68" height="6" rx="3" fill="var(--ink)" opacity=".18"/>
+    <g class="f-happy"><circle cx="-15" cy="-8" r="5.5" fill="var(--ink)"/><circle cx="15" cy="-8" r="5.5" fill="var(--ink)"/>
+      <path d="M-11 6 Q0 15 11 6" class="line"/></g>
+    <g class="f-sick"><path d="M-20 -13 l10 10 M-10 -13 l-10 10 M10 -13 l10 10 M20 -13 l-10 10" class="line"/>
+      <path d="M-11 10 q4 -5 8 0 t8 0" class="line"/></g>
+    <g class="f-sleep"><path d="M-21 -7 h12 M9 -7 h12" class="line"/><path d="M-6 9 h12" class="line"/>
+      <text class="zz lbl" x="40" y="-30">z</text></g>
+    ${o.wave ? `<g transform="translate(46,-4)"><g class="wave"><path d="M0 0 L26 -22" class="line" stroke-width="5"/><circle cx="28" cy="-24" r="7" fill="${o.color || 'var(--sun)'}" stroke="var(--ink)" stroke-width="3"/></g></g>` : ''}
+    ${agent}</g>${pill}
+    ${o.label ? `<text class="${o.lblClass || 'lbl'}" text-anchor="middle" y="68">${o.label}</text>` : ''}
+  </g>`;
+}
+
+function manager(x, y, o = {}) {
+  const rows = o.rows || [];
+  const list = rows.map((r, i) => `<g transform="translate(-44,${-52 + i * 22})"><circle id="${o.id || 'm'}dot${i}" cx="6" cy="0" r="6" fill="${r.c || 'var(--leaf)'}" stroke="var(--ink)" stroke-width="2"/>
+     <rect x="18" y="-4" width="${r.w || 54}" height="8" rx="4" fill="var(--mist)"/></g>`).join('');
+  return `<g transform="translate(${x},${y}) scale(${o.s || 1})"${B(o.b)}>
+    <rect x="-20" y="72" width="40" height="18" fill="var(--ink)"/><rect x="-54" y="88" width="108" height="12" rx="6" fill="var(--ink)"/>
+    <rect x="-74" y="-92" width="148" height="168" rx="20" fill="var(--steel)" stroke="var(--ink)" stroke-width="3.5"/>
+    <rect x="-58" y="-76" width="116" height="104" rx="10" fill="var(--paper)" stroke="var(--ink)" stroke-width="3"/>
+    ${list || `<circle cx="-18" cy="-30" r="6" fill="var(--ink)"/><circle cx="18" cy="-30" r="6" fill="var(--ink)"/><path d="M-14 -10 Q0 2 14 -10" class="line"/>`}
+    <rect x="-40" y="42" width="80" height="16" rx="8" fill="var(--paper)" opacity=".35"/>
+    <text text-anchor="middle" y="130" class="lbl">${o.label === undefined ? 'Fleet Manager' : o.label}</text></g>`;
+}
+
+function person(x, y, o = {}) {
+  return `<g transform="translate(${x},${y})"${B(o.b)}>
+    <circle cy="-70" r="28" fill="#F2C9A5" stroke="var(--ink)" stroke-width="3.5"/>
+    <path d="M-28 -78 Q-20 -108 6 -100 Q30 -96 28 -76 Q12 -90 -28 -78Z" fill="var(--ink)"/>
+    <circle cx="-9" cy="-68" r="3.5" fill="var(--ink)"/><circle cx="9" cy="-68" r="3.5" fill="var(--ink)"/>
+    <path d="${o.worried ? 'M-8 -52 Q0 -58 8 -52' : 'M-8 -56 Q0 -50 8 -56'}" class="line" stroke-width="3"/>
+    <path d="M-36 40 Q-36 -36 0 -36 Q36 -36 36 40Z" fill="var(--plum)" stroke="var(--ink)" stroke-width="3.5"/>
+    <text text-anchor="middle" y="66" class="lbl">${o.label || 'You'}</text></g>`;
+}
+
+const heart = (x, y, o = {}) => `<g transform="translate(${x},${y}) scale(1.6)"><path class="fly ${o.cls || ''}" style="--dx:${o.dx / 1.6}px;--dy:${o.dy / 1.6}px;--d:${o.d || 0}s;--t:${o.t || 2.4}s"
+  d="M0 6 C-12 -4 -10 -14 -3 -14 C0 -14 0 -11 0 -10 C0 -11 0 -14 3 -14 C10 -14 12 -4 0 6Z" fill="var(--rose)" stroke="var(--ink)" stroke-width="1.6"/></g>`;
+
+function bubble(x, y, w, text, o = {}) {
+  const h = o.h || 50, tail = o.tail || 'left';
+  const tx = tail === 'left' ? 24 : tail === 'right' ? w - 24 : w / 2;
+  const tailPath = o.tail === 'none' ? '' : `<path d="M${tx - 10} ${h - 2} L${tx + (tail === 'right' ? 14 : -14)} ${h + 18} L${tx + 10} ${h - 2}" fill="var(--paper)" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><rect x="${tx - 12}" y="${h - 6}" width="24" height="5" fill="var(--paper)"/>`;
+  return `<g transform="translate(${x},${y})"${B(o.b)} class="${o.cls || ''}">
+    <rect width="${w}" height="${h}" rx="16" class="card"/>${tailPath}
+    <text x="${w / 2}" y="${h / 2 + 6}" text-anchor="middle" class="${o.tc || 'lbl'}">${text}</text></g>`;
+}
+
+function prom(x, y, o = {}) {   /* Prometheus: an orange notebook-keeper with a little flame */
+  return `<g transform="translate(${x},${y}) scale(${o.s || 1})"${B(o.b)}><g class="bob">
+    <path d="M0 -112 C-14 -96 -10 -86 0 -80 C10 -86 14 -96 0 -112Z" fill="var(--sun)" stroke="var(--ink)" stroke-width="3"/>
+    <rect x="-50" y="-80" width="100" height="120" rx="18" fill="var(--ember)" stroke="var(--ink)" stroke-width="3.5"/>
+    <circle cx="-16" cy="-46" r="5.5" fill="var(--ink)"/><circle cx="16" cy="-46" r="5.5" fill="var(--ink)"/><path d="M-10 -32 Q0 -24 10 -32" class="line"/>
+    <rect x="-34" y="-14" width="68" height="44" rx="5" fill="var(--paper)" stroke="var(--ink)" stroke-width="3"/>
+    <path d="M-26 -2 h40 M-26 8 h50 M-26 18 h32" stroke="var(--mist)" stroke-width="4" stroke-linecap="round"/></g>
+    <text text-anchor="middle" y="70" class="lbl">${o.label === undefined ? 'Prometheus' : o.label}</text></g>`;
+}
+
+function tv(x, y, w, h, inner, o = {}) {   /* Grafana screen */
+  return `<g transform="translate(${x},${y})"${B(o.b)}>
+    <rect x="${w / 2 - 14}" y="${h}" width="28" height="22" fill="var(--ink)"/><rect x="${w / 2 - 60}" y="${h + 20}" width="120" height="12" rx="6" fill="var(--ink)"/>
+    <rect width="${w}" height="${h}" rx="18" fill="var(--plum)" stroke="var(--ink)" stroke-width="3.5"/>
+    <rect x="14" y="14" width="${w - 28}" height="${h - 28}" rx="10" fill="var(--paper)" stroke="var(--ink)" stroke-width="3"/>${inner}
+    <text x="${w / 2}" y="${h + 62}" text-anchor="middle" class="lbl">${o.label || 'Grafana'}</text></g>`;
+}
+
+function tracker(x, y, o = {}) {   /* node_exporter band */
+  return `<g transform="translate(${x},${y})"${B(o.b)}>
+    <rect x="-30" y="-15" width="60" height="30" rx="9" fill="var(--ink)"/>
+    <text class="mono" x="0" y="6" text-anchor="middle" style="fill:#7CF0B5;font-size:15px" ${o.id ? `id="${o.id}"` : ''}>${o.v || '34%'}</text></g>`;
+}
+
+/* ---------- scenes ---------- */
+const scenes = [
+{ chap: 'Start', title: 'What is this project, actually?', svg: () => `
+  <text x="500" y="110" text-anchor="middle" class="h1">Let's start from zero.</text>
+  ${node(500, 330, { s: 2.3, wave: true })}`,
+  beats: [
+    { say: "Hi! This is a short story about your project. You don't need to know anything yet. Not Linux, not Docker, not Prometheus." },
+    { say: "By the end, you'll be able to explain every box in it to someone else." },
+  ]},
+
+{ chap: 'Chapter 1', title: 'Meet a node', svg: () => `
+  ${node(250, 290, { s: 2.2, label: '' })}
+  <text x="250" y="450" text-anchor="middle" class="h2">a node</text>
+  ${[0,1,2,3].map(r => [0,1,2].map(c => node(570 + c * 140, 110 + r * 115, { s: .62, b: 3, delay: (r + c) * .2, bob: true })).join('')).join('')}
+  <text x="710" y="535" text-anchor="middle" class="sm" data-b="3">a fleet = a whole bunch of nodes</text>`,
+  beats: [
+    { say: "This is a <b>node</b>. It's just one computer. That's all the word means." },
+    { say: "It runs <b>Linux</b>, an operating system like Windows, except it's free and it's what almost every server in the world runs." },
+    { say: "A company doesn't have one of these. It has dozens, or thousands. That group is called a <b>fleet</b>." },
+  ]},
+
+{ chap: 'Chapter 1', title: 'The problem', svg: () => `
+  ${person(150, 380, { worried: true })}
+  ${bubble(40, 70, 290, 'Which ones are switched on?', { b: 2, tail: 'none' })}
+  ${bubble(40, 140, 290, 'Which ones are struggling?', { b: 3, tail: 'none' })}
+  ${bubble(40, 210, 290, 'How do I check all of them?', { b: 4 })}
+  ${node(520, 150, { s: .8 })}${node(670, 150, { s: .8, mood: 'sleep' })}${node(820, 150, { s: .8 })}
+  ${node(520, 310, { s: .8, mood: 'sick' })}${node(670, 310, { s: .8 })}${node(820, 310, { s: .8 })}
+  ${node(595, 460, { s: .8 })}${node(745, 460, { s: .8, mood: 'sick' })}`,
+  beats: [
+    { say: "Now imagine you're in charge of all these computers. They're in a data centre, maybe in another city. You can't walk up to each one." },
+    { say: "Some are switched off." },
+    { say: "Some are sick: too busy, out of memory, disk nearly full." },
+    { say: "And you need a way to check on all of them without logging into each one by hand. That's the problem this project solves." },
+  ]},
+
+{ chap: 'Chapter 2', title: 'One boss, many helpers', svg: () => `
+  ${manager(190, 260, { b: 1 })}
+  ${[[560,150],[730,150],[900,150],[560,380],[730,380],[900,380]].map(([x,y], i) => `
+    <path d="M270 ${230 + (i % 3) * 20} Q${(270 + x) / 2} ${y - 80} ${x - 10} ${y - 50}" class="line dash" opacity=".5" data-b="3"/>
+    ${node(x, y, { s: .8, agent: 2, delay: i * .3 })}`).join('')}
+  <g data-b="2"><text x="965" y="60" class="lbl" text-anchor="end">the agent</text><path d="M940 70 Q952 88 934 104" class="line" stroke-width="2.5"/></g>`,
+  beats: [
+    { say: "So we build a boss: the <b>Fleet Manager</b>. It's a program with a website where you can see every node in one place." },
+    { say: "Then on every node we install a tiny helper program called the <b>agent</b>. That little green guy." },
+    { say: "The agents talk to the boss. The boss never has to log in to anything." },
+    { say: "That's literally the assignment: build the boss and the helper. The rest of this story is just the details of how they talk." },
+  ]},
+
+{ chap: 'Chapter 3', title: 'Joining the fleet', svg: () => `
+  ${manager(180, 260)}
+  ${node(810, 300, { s: 1.4, agent: 3, id: 'newbie', state: '' })}
+  <g class="move" data-b="2" style="--dx:520px;--dy:-40px"><g transform="translate(240,170)">
+    <rect x="-46" y="-26" width="92" height="52" rx="8" fill="var(--sun)" stroke="var(--ink)" stroke-width="3"/>
+    <circle cx="-46" cy="0" r="9" fill="var(--sky)" stroke="var(--ink)" stroke-width="3"/><circle cx="46" cy="0" r="9" fill="var(--sky)" stroke="var(--ink)" stroke-width="3"/>
+    <text text-anchor="middle" y="6" class="lbl">invite</text></g></g>
+  <g data-b="1" data-hide="2"><g transform="translate(240,170)">
+    <rect x="-46" y="-26" width="92" height="52" rx="8" fill="var(--sun)" stroke="var(--ink)" stroke-width="3"/>
+    <circle cx="-46" cy="0" r="9" fill="var(--sky)" stroke="var(--ink)" stroke-width="3"/><circle cx="46" cy="0" r="9" fill="var(--sky)" stroke="var(--ink)" stroke-width="3"/>
+    <text text-anchor="middle" y="6" class="lbl">invite</text></g></g>
+  <g class="move" data-b="3" style="--dx:540px;--dy:120px"><g transform="translate(250,250)">
+    <rect x="-40" y="-28" width="80" height="56" rx="8" fill="var(--paper)" stroke="var(--ink)" stroke-width="3"/>
+    <circle cx="-18" cy="-4" r="10" fill="var(--steel)"/><rect x="0" y="-12" width="28" height="6" rx="3" fill="var(--mist)"/><rect x="0" y="0" width="22" height="6" rx="3" fill="var(--mist)"/>
+    <text text-anchor="middle" y="22" class="sm" style="font-size:11px">ID card</text></g></g>
+  <g data-b="4"><rect x="640" y="460" width="330" height="56" rx="14" class="card"/><text x="805" y="494" text-anchor="middle" class="lbl">invite code: expires fast, limited uses</text></g>`,
+  beats: [
+    { say: "How does a new computer join? Step one: in the Fleet Manager's website you click <b>Onboard</b>, and it gives you a one-time invite code." },
+    { say: "Step two: on the new computer, you run one install command with that code. It installs the agent." },
+    { say: "Step three: the agent shows the code to the boss. The boss checks it and hands back a permanent ID card. The node is now part of the fleet.", on: () => setNode('newbie', { state: 'pending' }) },
+    { say: "Invite codes expire quickly and can only be used a few times, so a leaked code isn't a disaster. In the code these are called <b>tokens</b>." },
+  ]},
+
+{ chap: 'Chapter 4', title: 'Heartbeats', svg: () => heartbeatScene(),
+  beats: [
+    { say: "Every 15 seconds, each agent sends the boss a tiny message: \"I'm still here.\" This is called a <b>heartbeat</b>." },
+    { say: "The boss writes down the last time it heard from each node. Heard from recently? It's marked <b>online</b>.", on: () => ['n0','n1','n2'].forEach(n => setNode(n, { state: 'online' })) },
+  ]},
+
+{ chap: 'Chapter 4', title: 'When a node breaks', svg: () => heartbeatScene(true) + `
+  <g data-b="1"><rect x="380" y="232" width="200" height="54" rx="14" class="card"/>
+  <text x="480" y="266" text-anchor="middle" class="lbl" id="silent">silent for 0s</text></g>`,
+  beats: [
+    { say: "Now one node crashes. Its heartbeats stop.", on: () => {
+        setNode('n1', { mood: 'sick' }); document.querySelectorAll('.hb1').forEach(h => h.classList.add('stopped'));
+        let s = 0; const t = setInterval(() => { s = Math.min(90, s + 3); const el = $('#silent'); if (el) el.textContent = `silent for ${s}s`; if (s >= 90) clearInterval(t); }, 90); timers.push(t);
+      } },
+    { say: "The boss waits. After <b>90 seconds</b> of silence, it marks that node <b>offline</b>, and stops sending it any work.", on: () => {
+        const el = $('#silent'); if (el) el.textContent = 'silent for 90s';
+        setNode('n1', { state: 'offline', mood: 'sleep' }); $('#mdot1')?.setAttribute('fill', 'var(--rose)');
+      } },
+    { say: "The other nodes don't care. Everything else keeps working. Engineers call this <b>graceful degradation</b>: one part breaks, the rest carries on." },
+    { say: "When the node recovers and sends a heartbeat again, it goes straight back to online. No human needed.", on: () => {
+        setNode('n1', { state: 'online', mood: 'happy' }); $('#mdot1')?.setAttribute('fill', 'var(--leaf)');
+        document.querySelectorAll('.hb1').forEach(h => h.classList.remove('stopped'));
+        const el = $('#silent'); if (el) el.textContent = 'back online';
+      } },
+  ]},
+
+{ chap: 'Chapter 5', title: 'Running a command', svg: () => `
+  <g transform="translate(110,40)">
+    <rect width="420" height="420" rx="22" class="card"/>
+    <text x="210" y="56" text-anchor="middle" class="h2">The menu</text>
+    ${[['uname -a','which Linux version?'],['uptime','how long has it been on?'],['df -h','how full are the disks?'],['free -h','how much memory is free?'],['whoami','which user is the agent?']]
+      .map(([c, d], i) => `<g transform="translate(34,${100 + i * 62})"><text class="mono" style="font-size:20px">${c}</text><text x="352" y="0" text-anchor="end" class="sm">${d}</text>
+      <line x1="0" y1="22" x2="352" y2="22" stroke="var(--mist)" stroke-width="2" stroke-dasharray="4 6"/></g>`).join('')}
+  </g>
+  <g data-b="2" transform="translate(640,120)">
+    <rect width="300" height="200" rx="16" class="card" transform="rotate(4)"/>
+    <text x="150" y="48" text-anchor="middle" class="mono" style="font-size:20px" transform="rotate(4)">delete everything</text>
+    <text x="150" y="76" text-anchor="middle" class="sm" transform="rotate(4)">(something you typed yourself)</text>
+    <g transform="translate(140,140) rotate(-8)"><g class="pop" data-b="2"><rect x="-130" y="-34" width="260" height="68" rx="10" fill="none" stroke="var(--rose)" stroke-width="6"/>
+    <text text-anchor="middle" y="12" class="h2" style="fill:var(--rose)">Not on the menu</text></g></g>
+  </g>
+  <g data-b="3" transform="translate(660,380)"><circle r="34" class="card"/><path d="M0 -20 V0 L14 10" class="line"/>
+    <text x="54" y="-6" class="lbl">time limit</text><text x="54" y="16" class="sm">nothing hangs forever</text></g>
+  <g data-b="4" transform="translate(660,470)"><rect x="-30" y="-34" width="60" height="68" rx="8" class="card"/><path d="M-16 -16 h32 M-16 -2 h32 M-16 12 h20" stroke="var(--soft)" stroke-width="4" stroke-linecap="round"/>
+    <text x="54" y="-6" class="lbl">logbook</text><text x="54" y="16" class="sm">who ran what, and when</text></g>`,
+  beats: [
+    { say: "Sometimes you want to ask a node a question. So you can send it a <b>command</b>, but only from a fixed menu of five safe ones." },
+    { say: "Try anything else and it's refused. Checked twice: once by the boss, and again by the agent itself." },
+    { say: "Every command has a time limit, and the reply is capped in size, so nothing can hang forever or flood the screen." },
+    { say: "And every request and every result goes in a logbook. Why so strict? Because otherwise the boss becomes a master key to every machine you own." },
+  ]},
+
+{ chap: 'Chapter 5', title: 'The node always calls out', svg: () => `
+  ${manager(190, 270)}
+  ${node(800, 320, { s: 1.4, agent: true })}
+  ${bubble(560, 90, 300, 'Any jobs for me?', { b: 1, tail: 'right' })}
+  ${bubble(300, 110, 230, 'Yes: run uptime', { b: 2 })}
+  ${bubble(560, 180, 300, 'Done: up for 3 days', { b: 3, tail: 'right' })}
+  <g data-b="4"><path d="M420 470 h360" class="line"/><path d="M420 470 l16 -10 M420 470 l16 10" class="line"/>
+  <text x="600" y="505" text-anchor="middle" class="sm">the node starts every conversation</text></g>`,
+  beats: [
+    { say: "How does the command actually reach the node? The agent keeps asking the boss: \"Any jobs for me?\"" },
+    { say: "If there's one waiting, the boss answers: \"Yes, run uptime.\"" },
+    { say: "The agent runs it and sends back the answer." },
+    { say: "The boss never reaches into the node. The node always calls out. That's why it works even when the node is hidden behind a router or firewall." },
+  ]},
+
+{ chap: 'Interlude', title: 'Two different questions', svg: () => `
+  <g transform="translate(290,250)"><path d="M0 50 C-90 -20 -70 -90 -22 -90 C-6 -90 0 -78 0 -70 C0 -78 6 -90 22 -90 C70 -90 90 -20 0 50Z" fill="var(--rose)" stroke="var(--ink)" stroke-width="4"/>
+    <text text-anchor="middle" y="110" class="h2">Is it alive?</text><text text-anchor="middle" y="142" class="sm">heartbeats, chapters 2 to 5</text></g>
+  <g transform="translate(710,250)" data-b="2"><rect x="-80" y="-90" width="160" height="130" rx="18" class="card"/>
+    <path d="M-60 10 L-30 -30 L0 -6 L30 -60 L60 -40" class="line" stroke="var(--plum)" stroke-width="5"/>
+    <text text-anchor="middle" y="110" class="h2">How is it feeling?</text><text text-anchor="middle" y="142" class="sm">CPU, memory, disk, network</text></g>
+  <g data-b="3" transform="translate(500,500)">
+    ${[['node_exporter','var(--ink)',-260],['Prometheus','var(--ember)',0],['Grafana','var(--plum)',260]].map(([t, c, dx]) => `
+    <g transform="translate(${dx},0)"><rect x="-110" y="-26" width="220" height="52" rx="26" fill="${c}" stroke="var(--ink)" stroke-width="3"/>
+    <text text-anchor="middle" y="7" class="lbl" style="fill:#fff">${t}</text></g>`).join('')}</g>`,
+  beats: [
+    { say: "So far we've answered one question: is the node alive?" },
+    { say: "The second half of the project answers a different one: how is it feeling? Is the CPU busy? Is memory full? Is the disk running out?" },
+    { say: "For that, the project uses three standard tools that real companies use. One each. Let's meet them." },
+  ]},
+
+{ chap: 'Chapter 6', title: 'node_exporter: the fitness tracker', svg: () => `
+  ${node(340, 300, { s: 2.4 })}
+  ${tracker(340, 430, { id: 'cpuv', v: 'CPU 34%' }).replace('x="-30" y="-15" width="60"', 'x="-70" y="-15" width="140"')}
+  <g data-b="2" transform="translate(640,110)">
+    ${[['CPU','cpu','34%'],['Memory','mem','61%'],['Disk','dsk','78%'],['Network','net','2.1 MB/s']].map(([k, id, v], i) => `
+    <g transform="translate(0,${i * 78})"><rect width="300" height="62" rx="14" class="card"/>
+    <text x="22" y="39" class="lbl">${k}</text><text x="278" y="40" text-anchor="end" class="mono" style="font-size:22px" id="${id}">${v}</text></g>`).join('')}
+  </g>
+  <g data-b="3" transform="translate(640,440)"><text class="sm">sits on a web page at</text><text y="28" class="mono" style="font-size:18px">node:9100/metrics</text></g>`,
+  beats: [
+    { say: "Tool one: <b>node_exporter</b>. Think of it as a fitness tracker strapped to each node.", on: liveNumbers },
+    { say: "It reads the computer's vital signs straight out of Linux: CPU, memory, disk and network." },
+    { say: "But it doesn't send them anywhere. It just shows the latest numbers on a little web page and waits for someone to come and read them." },
+  ]},
+
+{ chap: 'Chapter 7', title: 'Prometheus: the note-taker', svg: () => `
+  ${prom(170, 240)}
+  ${[0,1,2].map(i => `${node(620 + i * 140, 440, { s: .75, delay: i * .3 })}${tracker(620 + i * 140, 495, { v: ['34%','12%','71%'][i] })}
+     <path d="M240 ${200 + i * 30} Q${430 + i * 60} ${250} ${606 + i * 140} 392" class="line dash" opacity=".45" data-b="1"/>
+     <circle cx="${620 + i * 140}" cy="400" fill="none" stroke="var(--ember)" stroke-width="3" class="ping" style="animation-delay:${i * .5}s" data-b="1"/>`).join('')}
+  <g data-b="2" transform="translate(340,60)">
+    <rect width="380" height="250" rx="16" class="card"/>
+    <text x="24" y="40" class="lbl">time</text><text x="150" y="40" class="lbl">node</text><text x="290" y="40" class="lbl">CPU</text>
+    <line x1="16" y1="54" x2="364" y2="54" stroke="var(--ink)" stroke-width="2"/>
+    ${[['03:00:00','web-1','34%'],['03:00:00','web-2','12%'],['03:00:15','web-1','37%'],['03:00:15','web-2','11%'],['03:00:30','web-1','52%']].map((r, i) => `
+     <g class="pop" data-b="2" style="animation-delay:${i * .5}s;transition-delay:${i * .5}s"><text x="24" y="${86 + i * 34}" class="mono">${r[0]}</text><text x="150" y="${86 + i * 34}" class="mono">${r[1]}</text><text x="290" y="${86 + i * 34}" class="mono">${r[2]}</text></g>`).join('')}
+  </g>
+  <g data-b="3">${manager(880, 160, { s: .55, label: '' })}<text x="880" y="250" text-anchor="middle" class="sm">"here's the list"</text>
+   <path d="M820 140 Q760 120 724 130" class="line"/><path d="M724 130 l14 -8 M724 130 l12 10" class="line"/></g>`,
+  beats: [
+    { say: "Tool two: <b>Prometheus</b>. Every 15 seconds it goes round every node's tracker and copies down the numbers. This is called <b>scraping</b>." },
+    { say: "It keeps everything, with a timestamp. So later you can ask: what was the CPU doing at three in the morning?" },
+    { say: "How does it know which nodes exist? It asks the Fleet Manager for the current list. A new node joins, and Prometheus starts visiting it automatically." },
+  ]},
+
+{ chap: 'Chapter 8', title: 'Grafana: the chart maker', svg: () => `
+  ${prom(170, 250)}
+  <path d="M260 230 H420" class="line"/><path d="M420 230 l-14 -9 M420 230 l-14 9" class="line"/>
+  <text x="340" y="212" text-anchor="middle" class="sm">"CPU for web-1?"</text>
+  ${tv(450, 70, 480, 300, `
+    <path d="M44 250 H446 M44 250 V44" stroke="var(--mist)" stroke-width="3"/>
+    <path class="drawme line" d="M50 220 L100 200 L150 210 L200 150 L250 170 L300 110 L350 140 L400 80 L440 96" stroke="var(--plum)" stroke-width="5" fill="none"/>
+    <text x="50" y="40" class="lbl">CPU busy, web-1</text>`, { b: 1 })}
+  <g data-b="3" transform="translate(470,470)"><rect width="200" height="48" rx="12" class="card"/><text x="100" y="31" text-anchor="middle" class="lbl">Linux node</text>
+    <rect x="240" width="200" height="48" rx="12" class="card"/><text x="340" y="31" text-anchor="middle" class="lbl">Fleet overview</text></g>`,
+  beats: [
+    { say: "Tool three: <b>Grafana</b>. It turns Prometheus's notebook into charts you can actually read." },
+    { say: "It doesn't store anything itself. Every chart is just a question it asks Prometheus, drawn as a picture." },
+    { say: "The project comes with two ready-made dashboards: one for a single node, and one for the whole fleet." },
+  ]},
+
+{ chap: 'Chapter 9', title: 'Why two separate systems?', svg: () => `
+  <rect x="40" y="40" width="440" height="440" rx="24" fill="#FBE3E4" stroke="var(--ink)" stroke-width="3"/>
+  <rect x="520" y="40" width="440" height="440" rx="24" fill="#ECE7FE" stroke="var(--ink)" stroke-width="3"/>
+  <text x="260" y="86" text-anchor="middle" class="h2">Is it alive?</text>
+  <text x="740" y="86" text-anchor="middle" class="h2">How is it feeling?</text>
+  ${node(130, 300, { s: .8, agent: true })}${heart(170, 280, { dx: 130, dy: -10 })}${manager(380, 290, { s: .7, label: '' })}
+  <text x="380" y="400" text-anchor="middle" class="lbl">Fleet Manager</text>
+  <text x="260" y="450" text-anchor="middle" class="sm">"can I send it work?"</text>
+  ${node(600, 300, { s: .7 })}${tracker(600, 352, { v: '34%' })}${prom(740, 320, { s: .6, label: '' })}
+  ${tv(820, 240, 110, 80, `<path d="M26 56 L46 40 L62 48 L84 26" class="line" stroke="var(--plum)" stroke-width="4"/>`, { label: ' ' })}
+  <text x="740" y="400" text-anchor="middle" class="lbl">node_exporter, Prometheus, Grafana</text>
+  <text x="740" y="450" text-anchor="middle" class="sm">"what's it doing?"</text>
+  <g data-b="2" class="pop"><rect x="300" y="500" width="400" height="48" rx="24" fill="var(--ink)"/><text x="500" y="531" text-anchor="middle" class="lbl" style="fill:#fff">one breaks, the other keeps going</text></g>`,
+  beats: [
+    { say: "So there are two separate systems, side by side. Heartbeats on the left. Health numbers on the right." },
+    { say: "That's on purpose. If Prometheus breaks, you can still run commands. If an agent dies, you still have its charts from before. That's the graceful degradation the assignment asks for." },
+  ]},
+
+{ chap: 'Chapter 10', title: 'So what is Docker doing here?', svg: () => `
+  <g transform="translate(500,280)">
+    <rect x="-360" y="-210" width="720" height="380" rx="26" fill="var(--ink)"/>
+    <rect x="-336" y="-186" width="672" height="332" rx="14" fill="var(--sky)"/>
+    <path d="M-430 170 H430 L400 210 H-400Z" fill="#33405F" stroke="var(--ink)" stroke-width="3"/>
+    <text y="-140" text-anchor="middle" class="h2" data-b="1">your laptop</text>
+    ${[['Fleet Manager','var(--steel)',-250,-70],['Prometheus','var(--ember)',-80,-70],['Grafana','var(--plum)',90,-70],['node_exporter','var(--ink)',260,-70]].map(([t, c, x, y], i) => `
+      <g transform="translate(${x},${y})"><g class="pop" data-b="2" style="animation-delay:${i * .25}s">
+      <path d="M-70 -30 L0 -58 L70 -30 L0 -2Z" fill="${c}" opacity=".55" stroke="var(--ink)" stroke-width="3"/>
+      <path d="M-70 -30 L0 -2 V78 L-70 50Z" fill="${c}" stroke="var(--ink)" stroke-width="3"/><path d="M70 -30 L0 -2 V78 L70 50Z" fill="${c}" opacity=".8" stroke="var(--ink)" stroke-width="3"/>
+      <text y="110" text-anchor="middle" class="lbl" style="font-size:15px">${t}</text></g></g>`).join('')}
+    <g data-b="3"><path d="M-250 70 Q0 130 260 70" class="line dash"/><text y="138" text-anchor="middle" class="sm" style="fill:var(--ink)">one private network</text></g>
+  </g>`,
+  beats: [
+    { say: "Last puzzle. All of this needs several computers. But you only have one laptop. So where are they?" },
+    { say: "<b>Docker</b> runs each program inside a sealed box called a <b>container</b>. Each box acts like its own little computer, with its own files and its own address." },
+    { say: "One command, <code>docker compose up</code>, starts all four boxes and plugs them into a private network so they can talk to each other." },
+    { say: "There's also an optional fifth box with a demo agent. So your laptop plays the part of a tiny data centre. That's what \"running Linux nodes on Docker\" means." },
+  ]},
+
+{ chap: 'Recap', title: 'The whole thing in one picture', svg: () => `
+  ${person(80, 300, { label: 'You' })}
+  ${manager(330, 250, { s: .8 })}
+  ${node(640, 270, { s: 1.1, agent: true })}${tracker(640, 340, { v: '34%' })}
+  ${prom(870, 150, { s: .7 })}
+  ${tv(790, 330, 160, 110, `<path class="drawme line" d="M30 84 L60 60 L90 70 L130 34" stroke="var(--plum)" stroke-width="4"/>`, { label: 'Grafana' })}
+  <g data-b="1"><path d="M130 250 H250" class="line"/><circle cx="190" cy="226" r="16" fill="var(--sun)" stroke="var(--ink)" stroke-width="3"/><text x="190" y="232" text-anchor="middle" class="lbl">1</text></g>
+  <g data-b="2">${heart(580, 230, { dx: -170, dy: -20 })}<circle cx="490" cy="196" r="16" fill="var(--sun)" stroke="var(--ink)" stroke-width="3"/><text x="490" y="202" text-anchor="middle" class="lbl">2</text></g>
+  <g data-b="3"><path d="M590 330 Q490 380 400 320" class="line dash"/><circle cx="490" cy="370" r="16" fill="var(--sun)" stroke="var(--ink)" stroke-width="3"/><text x="490" y="376" text-anchor="middle" class="lbl">3</text></g>
+  <g data-b="4"><path d="M830 170 Q720 190 680 240" class="line dash"/><circle cx="740" cy="186" r="16" fill="var(--sun)" stroke="var(--ink)" stroke-width="3"/><text x="740" y="192" text-anchor="middle" class="lbl">4</text></g>
+  <g data-b="5"><path d="M870 210 V320" class="line"/><circle cx="896" cy="270" r="16" fill="var(--sun)" stroke="var(--ink)" stroke-width="3"/><text x="896" y="276" text-anchor="middle" class="lbl">5</text></g>`,
+  beats: [
+    { say: "One: you use the Fleet Manager's website, and onboard a node with an invite code." },
+    { say: "Two: the agent on each node sends a heartbeat every 15 seconds, so the boss knows who's online." },
+    { say: "Three: you run commands from the safe menu. The agent asks for jobs, runs them, and sends back the answer." },
+    { say: "Four: node_exporter shows the node's vital signs, and Prometheus writes them down every 15 seconds." },
+    { say: "Five: Grafana draws those numbers as charts. That's the whole project." },
+  ]},
+
+{ chap: 'Try it', title: "It's running on your laptop right now", html: () => `<div class="html steps">
+  <div class="step"><span class="n">1</span><div><h3>Open the Fleet Manager</h3><p><a href="http://localhost:8080" target="_blank" rel="noopener">localhost:8080</a>, and sign in with <code>dev-admin-token</code>. This is the boss's website.</p></div></div>
+  <div class="step"><span class="n">2</span><div><h3>Click Onboard</h3><p>It makes an invite code, just like chapter 3. The fleet list stays empty until an agent uses one.</p></div></div>
+  <div class="step"><span class="n">3</span><div><h3>Peek at Prometheus</h3><p><a href="http://localhost:9090/targets" target="_blank" rel="noopener">localhost:9090/targets</a> lists every place it's scraping. Green "UP" means the readings are arriving.</p></div></div>
+  <div class="step"><span class="n">4</span><div><h3>Open Grafana</h3><p><a href="http://localhost:3000" target="_blank" rel="noopener">localhost:3000</a>, log in as <code>admin</code> / <code>admin</code>, then open Dashboards to see the charts from chapter 8.</p></div></div>
+  </div>`,
+  beats: [
+    { say: "Everything you just saw is running in Docker on your laptop right now. Open these four pages and match each one to a chapter." },
+  ]},
+
+{ chap: 'Cheat sheet', title: "Words you'll hear", html: () => `<div class="html"><div class="gloss">
+  <div><b>Node</b><span>One Linux computer in the fleet.</span></div>
+  <div><b>Fleet</b><span>All the nodes together.</span></div>
+  <div><b>Fleet Manager</b><span>The boss. A Go program with a website and a database.</span></div>
+  <div><b>Agent</b><span>The helper program installed on every node.</span></div>
+  <div><b>Token</b><span>A secret code. The invite code and the node's ID card are both tokens.</span></div>
+  <div><b>Heartbeat</b><span>"I'm still here", sent every 15 seconds.</span></div>
+  <div><b>Online / offline</b><span>Offline means no heartbeat for 90 seconds.</span></div>
+  <div><b>Graceful degradation</b><span>One part breaks, the rest keeps working.</span></div>
+  <div><b>Allowlist</b><span>The fixed menu of commands. Nothing else runs.</span></div>
+  <div><b>node_exporter</b><span>The fitness tracker that shows a node's vital signs.</span></div>
+  <div><b>Prometheus</b><span>Writes those numbers down every 15 seconds. Scraping.</span></div>
+  <div><b>Grafana</b><span>Draws Prometheus's numbers as charts.</span></div>
+  <div><b>Container</b><span>A sealed box that acts like its own little computer.</span></div>
+  <div><b>Docker Compose</b><span>Starts all the boxes at once from one file.</span></div>
+  </div></div>`,
+  beats: [
+    { say: "Keep this page handy. If anyone asks you about the project, these fourteen words are all you need." },
+  ]},
+];
+
+function heartbeatScene(withTimer) {
+  const ys = [130, 290, 450];
+  return `${manager(190, 270, { rows: [{}, {}, {}], b: 0 })}
+    ${ys.map((y, i) => node(800, y, { s: .85, agent: true, id: 'n' + i, state: withTimer ? 'online' : '', delay: i * .3 })
+       + [0, 1].map(k => heart(740, y - 10, { dx: -460, dy: 250 - y - 30 + i * 22, d: i * .7 + k * 1.3, t: 2.6, cls: 'hb' + i })).join('')).join('')}`;
+}
+
+/* ---------- engine ---------- */
+const stage = $('#stage'), sub = $('#sub');
+let si = 0, bi = 0, playing = !matchMedia('(prefers-reduced-motion:reduce)').matches, narrate = false, tick = null, timers = [];
+const flat = scenes.flatMap((s, i) => s.beats.map((_, j) => [i, j]));
+
+function setNode(id, { state, mood } = {}) {
+  const g = document.getElementById(id); if (!g) return;
+  if (mood) g.dataset.mood = mood;
+  if (state !== undefined) { g.dataset.state = state; const t = g.querySelector('.pilltxt'); if (t) t.textContent = state; }
+}
+function liveNumbers() {
+  const rnd = (a, b) => Math.round(a + Math.random() * (b - a));
+  const t = setInterval(() => {
+    const c = rnd(22, 58); const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('cpu', c + '%'); set('cpuv', 'CPU ' + c + '%'); set('mem', rnd(58, 64) + '%'); set('dsk', '78%'); set('net', (Math.random() * 3 + .5).toFixed(1) + ' MB/s');
+  }, 1100); timers.push(t);
+}
+
+function render(i) {
+  timers.forEach(clearInterval); timers = [];
+  const s = scenes[i];
+  stage.innerHTML = s.html ? s.html() : `<svg viewBox="0 0 1000 560" role="img" aria-label="${s.title}">${s.svg()}</svg>`;
+  $('#chap').textContent = s.chap; $('#title').textContent = s.title;
+}
+function applyBeat(upTo) {
+  stage.querySelectorAll('[data-b]').forEach(el => el.classList.toggle('show', +el.dataset.b <= upTo + 1));
+  stage.querySelectorAll('[data-hide]').forEach(el => el.classList.toggle('gone', +el.dataset.hide <= upTo + 1));
+}
+function go(ni, nj, replay) {
+  clearTimeout(tick); window.speechSynthesis?.cancel();
+  const changed = ni !== si || replay;
+  if (changed) render(ni);
+  si = ni; bi = nj;
+  // run every beat's hook up to here when jumping into a scene, so state matches
+  if (changed) for (let k = 0; k < nj; k++) scenes[si].beats[k].on?.();
+  applyBeat(bi);
+  const beat = scenes[si].beats[bi];
+  sub.innerHTML = `<span>${beat.say}</span>`;
+  beat.on?.();
+  updateBar();
+  schedule(beat.say);
+}
+function dur(html) { const w = html.replace(/<[^>]+>/g, '').split(/\s+/).length; return Math.max(3600, w * 380 + 1400); }
+function schedule(html) {
+  if (!playing) return;
+  const ms = dur(html);
+  if (narrate && 'speechSynthesis' in window) {
+    const u = new SpeechSynthesisUtterance(html.replace(/<[^>]+>/g, '').replace(/df -h/g, 'D F').replace(/free -h/g, 'free').replace(/uname -a/g, 'you-name'));
+    u.rate = 1; let done = false;
+    const fin = () => { if (done) return; done = true; tick = setTimeout(step, 700); };
+    u.onend = fin; u.onerror = fin; speechSynthesis.speak(u);
+    tick = setTimeout(fin, ms * 2.2);
+  } else tick = setTimeout(step, ms);
+}
+function pos() { return flat.findIndex(([a, b]) => a === si && b === bi); }
+function step(d = 1) {
+  const p = pos() + d;
+  if (p >= flat.length) { setPlaying(false); return; }
+  if (p < 0) return;
+  go(...flat[p]);
+}
+function setPlaying(v) { playing = v; $('#play').textContent = v ? 'Pause' : 'Play'; if (v) { if (pos() === flat.length - 1) go(0, 0, true); else go(si, bi); } else { clearTimeout(tick); window.speechSynthesis?.cancel(); } }
+function updateBar() {
+  const bar = $('#bar');
+  if (!bar.children.length) scenes.forEach((s, i) => { const el = document.createElement('i'); el.title = s.title; el.innerHTML = '<b></b>'; el.onclick = () => go(i, 0, true); bar.append(el); });
+  [...bar.children].forEach((el, i) => el.firstChild.style.width = i < si ? '100%' : i > si ? '0' : ((bi + 1) / scenes[i].beats.length * 100) + '%');
+  $('#count').textContent = `${si + 1} / ${scenes.length}`;
+}
+
+$('#play').onclick = () => setPlaying(!playing);
+$('#next').onclick = () => step(1);
+$('#prev').onclick = () => { const p = pos(); if (p > 0) { const [a, b] = flat[p - 1]; go(a, b, true); } };
+$('#voice').onclick = () => { narrate = !narrate; $('#voice').setAttribute('aria-pressed', narrate); go(si, bi); };
+addEventListener('keydown', e => {
+  if (e.target.closest('a')) return;
+  if (e.key === ' ') { e.preventDefault(); setPlaying(!playing); }
+  else if (e.key === 'ArrowRight') step(1);
+  else if (e.key === 'ArrowLeft') $('#prev').click();
+  else if (e.key.toLowerCase() === 'v') $('#voice').click();
+});
+$('#play').textContent = playing ? 'Pause' : 'Play';
+const h = /s=(\d+)(?:&b=(\d+))?/.exec(location.hash);
+if (h) { playing = !/paused/.test(location.hash); $('#play').textContent = playing ? 'Pause' : 'Play';
+  const i = Math.min(scenes.length - 1, +h[1] - 1), j = Math.min(scenes[i].beats.length - 1, +(h[2] || 1) - 1); render(i); si = i; go(i, j, true); }
+else { render(0); go(0, 0); }
+</script>
+</body>
+</html>
